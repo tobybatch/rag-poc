@@ -28,6 +28,7 @@ from lxml import html as lxml_html
 from tqdm import tqdm
 
 DEFAULT_BASE_URL = "https://playbook.dxw.com"
+DEFAULT_XPATH = "/html/body/main"
 RAW_DIR = os.path.join(os.path.dirname(__file__), "data", "raw")
 USER_AGENT = "playbook-rag-crawler/1.0 (personal use; contact: internal dxw tool)"
 REQUEST_DELAY_SECONDS = 0.5  # be polite - don't hammer the site
@@ -91,9 +92,6 @@ def extract_page(html: str, url: str, xpath: etree.XPath | None = None) -> dict 
         for tag in soup.select(selector):
             tag.decompose()
 
-    # Outline (the wiki this site runs on) renders the document body inside
-    # a <main> or an element with a data-testid/class hinting at the editor.
-    # Fall back to the whole body if none of these are found.
     content_root = (
         soup.find("main")
         or soup.find(attrs={"class": re.compile(r"(document|editor|content)", re.I)})
@@ -176,10 +174,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.xpath:
-        try:
-            etree.XPath(args.xpath)
-        except etree.XPathSyntaxError as e:
-            parser.error(f"invalid --xpath {args.xpath!r}: {e}")
+        xpath = args.xpath
+    else:
+        xpath = DEFAULT_XPATH
+    try:
+        etree.XPath(xpath)
+    except etree.XPathSyntaxError as e:
+        parser.error(f"invalid --xpath {xpath!r}: {e}")
 
-    pages = crawl(base_url=args.base_url, max_pages=args.max_pages, xpath=args.xpath)
+    pages = crawl(base_url=args.base_url, max_pages=args.max_pages, xpath=xpath)
     print(f"\nDone. Saved {len(pages)} pages to {os.path.abspath(RAW_DIR)}")

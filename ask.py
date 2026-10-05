@@ -23,8 +23,7 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 CLAUDE_MODEL = "claude-sonnet-5"
 TOP_K = 6
 
-SYSTEM_PROMPT = """You are a helpful assistant answering questions about dxw's internal Playbook \
-(playbook.dxw.com), using only the excerpts provided to you below.
+SYSTEM_PROMPT = """You are a helpful assistant answering questions about a crawled resource, using only the excerpts provided to you below.
 
 Rules:
 - Answer using only the information in the provided excerpts. Do not use outside knowledge.
@@ -74,7 +73,7 @@ def answer_question(client, collection, model, question: str) -> str:
         messages=[
             {
                 "role": "user",
-                "content": f"Playbook excerpts:\n\n{context}\n\n---\n\nQuestion: {question}",
+                "content": f"Data excerpts:\n\n{context}\n\n---\n\nQuestion: {question}",
             }
         ],
     )
@@ -93,7 +92,7 @@ def main():
         print(answer_question(client, collection, model, question))
         return
 
-    print("Ask questions about dxw's Playbook. Type 'quit' to exit.\n")
+    print("Ask questions. Type 'quit' to exit.\n")
     while True:
         try:
             question = input("> ").strip()
