@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Reads every page saved by crawler.py / pdf_crawler.py in data/raw/, splits each into chunks,
+Reads every page saved by crawler.py, pdf_crawler.py, or markdown_crawler.py
+in data/raw/, splits each into chunks,
 embeds them with a local sentence-transformers model, and stores them in a
 persistent local Chroma vector database at data/index/.
 
-Run this after crawler.py and/or pdf_crawler.py, and again any time you
-re-crawl / the playbook or PDFs change. It's a full rebuild each time - simple and fast enough at this
+Run this after crawling any source, and again any time you
+re-crawl / any source files change. It's a full rebuild each time - simple and fast enough at this
 scale (a few hundred chunks), so there's no incremental-update logic to
 worry about.
 

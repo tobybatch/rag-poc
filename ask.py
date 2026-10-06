@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
 """
-Ask questions about dxw's Playbook, answered by Claude grounded in the
-content indexed by build_index.py.
+Ask questions about dxw's Playbook, grounded in the content indexed by
+build_index.py. Answers can come from Claude or a local Ollama model.
 
-Requires the ANTHROPIC_API_KEY environment variable to be set to your
-Anthropic API key.
+Claude requires the ANTHROPIC_API_KEY environment variable. Ollama requires
+a running local Ollama server and the selected model pulled in advance.
 
 Usage:
-    uv run ask.py                                # interactive chat loop
+    uv run ask.py                                # interactive Claude chat
     uv run ask.py "How much holiday do I get?"   # ask a single question and exit
+    uv run ask.py --provider ollama --model llama3.2
 """
+import argparse
 import os
 import sys
 
 import chromadb
-from anthropic import Anthropic
+import requests
 from sentence_transformers import SentenceTransformer
 
 INDEX_DIR = os.path.join(os.path.dirname(__file__), "data", "index")
 COLLECTION_NAME = "playbook"
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 CLAUDE_MODEL = "claude-sonnet-5"
+OLLAMA_MODEL = "llama3.2"
+OLLAMA_HOST = "http://localhost:11434"
 TOP_K = 6
 
 SYSTEM_PROMPT = """You are a helpful assistant answering questions about a crawled resource, using only the excerpts provided to you below.
@@ -32,7 +36,7 @@ Rules:
 - Be concise and direct."""
 
 
-def load_retriever():
+def load_retriever(local_files_only: bool = False):
     if not os.path.isdir(INDEX_DIR) or not os.listdir(INDEX_DIR):
         sys.exit(
             f"No index found at {INDEX_DIR}.\n"
@@ -40,7 +44,7 @@ def load_retriever():
         )
     client = chromadb.PersistentClient(path=INDEX_DIR)
     collection = client.get_collection(COLLECTION_NAME)
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=local_files_only)
     return collection, model
 
 
@@ -62,34 +66,87 @@ def build_context_block(hits) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def answer_question(client, collection, model, question: str) -> str:
-    hits = retrieve(collection, model, question)
+def answer_question(
+    provider,
+    client,
+    collection,
+    embedding_model,
+    question: str,
+    llm_model: str,
+    ollama_host: str,
+) -> str:
+    hits = retrieve(collection, embedding_model, question)
     context = build_context_block(hits)
+    prompt = f"Data excerpts:\n\n{context}\n\n---\n\nQuestion: {question}"
+
+    if provider == "ollama":
+        response = requests.post(
+            f"{ollama_host.rstrip('/')}/api/chat",
+            json={
+                "model": llm_model,
+                "stream": False,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+            },
+            timeout=300,
+        )
+        response.raise_for_status()
+        return response.json()["message"]["content"]
 
     message = client.messages.create(
-        model=CLAUDE_MODEL,
+        model=llm_model,
         max_tokens=1024,
         system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Data excerpts:\n\n{context}\n\n---\n\nQuestion: {question}",
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
     )
     return "".join(block.text for block in message.content if block.type == "text")
 
 
 def main():
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--provider",
+        choices=("claude", "ollama"),
+        default="claude",
+        help="Answer provider (default: claude)",
+    )
+    parser.add_argument("--model", help="Model name (defaults to the provider's configured default)")
+    parser.add_argument(
+        "--ollama-host",
+        default=os.environ.get("OLLAMA_HOST", OLLAMA_HOST),
+        help=f"Ollama server URL (default: {OLLAMA_HOST}, or OLLAMA_HOST)",
+    )
+    parser.add_argument("question", nargs="*", help="Question to ask; omit to start interactive chat")
+    args = parser.parse_args()
+
+    if args.provider == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Set the ANTHROPIC_API_KEY environment variable to your Anthropic API key first.")
 
-    collection, model = load_retriever()
-    client = Anthropic()
+    collection, embedding_model = load_retriever(local_files_only=args.provider == "ollama")
+    llm_model = args.model or (OLLAMA_MODEL if args.provider == "ollama" else CLAUDE_MODEL)
+    client = None
+    if args.provider == "claude":
+        from anthropic import Anthropic
 
-    if len(sys.argv) > 1:
-        question = " ".join(sys.argv[1:])
-        print(answer_question(client, collection, model, question))
+        client = Anthropic()
+
+    def answer(question: str) -> str:
+        try:
+            return answer_question(
+                args.provider, client, collection, embedding_model, question, llm_model, args.ollama_host
+            )
+        except requests.RequestException as error:
+            if args.provider == "ollama":
+                raise SystemExit(
+                    f"Could not reach Ollama at {args.ollama_host}: {error}\n"
+                    "Make sure Ollama is running and the model is available locally."
+                ) from error
+            raise
+
+    if args.question:
+        print(answer(" ".join(args.question)))
         return
 
     print("Ask questions. Type 'quit' to exit.\n")
@@ -104,7 +161,7 @@ def main():
         if question.lower() in {"quit", "exit"}:
             break
         print()
-        print(answer_question(client, collection, model, question))
+        print(answer(question))
         print()
 
 
