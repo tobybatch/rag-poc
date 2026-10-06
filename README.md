@@ -22,13 +22,13 @@ uv run crawler.py
 #    save text from the matching part of each page (e.g. --xpath "//main")
 
 # 1b. (optional) Add a folder of PDFs - saved alongside the crawled pages
-uv run pdf_crawler.py path/to/pdfs
-#    optional: --recursive for subfolders, --clean to drop previously added PDFs,
+uv run pdf_crawler.py path/to/pdfs path/to/more-pdfs
+#    --recursive reads subfolders of every directory; --clean drops previously added PDFs,
 #    --url-prefix <url> to cite them as hosted URLs instead of local file paths
 
 # 1c. (optional) Add a folder of Markdown files
-uv run markdown_crawler.py path/to/markdown
-#    optional: --recursive for subfolders, --clean to drop previously added Markdown,
+uv run markdown_crawler.py path/to/markdown path/to/more-markdown
+#    --recursive reads subfolders of every directory; --clean drops previously added Markdown,
 #    --url-prefix <url> to cite them as hosted URLs instead of local file paths
 
 # 2. Chunk and embed everything into a local vector database
